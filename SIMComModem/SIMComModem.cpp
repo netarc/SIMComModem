@@ -3,13 +3,48 @@
 #define DEFAULT_HARDWARE_RESET_PIN 2
 char* __ok__="OK";
 
+SIMComModemClass SIMComModem;
 
-SIMComModem::SIMComModem() : _reset_pin(DEFAULT_HARDWARE_RESET_PIN),
-                             _sim_pin(NULL) {
+
+void modem_power_toggle(uint8_t power_pin) {
+  pinMode(power_pin, OUTPUT);
+  digitalWrite(power_pin, HIGH);
+  delay(200);
+  digitalWrite(power_pin, LOW);
+}
+
+SIMComModemClass::SIMComModemClass() : _hardware_power_pin(DEFAULT_HARDWARE_RESET_PIN),
+                                       _sim_pin(NULL),
+                                       _powered_on(false) {
 
 }
 
-void SIMComModem::setSIMPin(char *pin) {
+bool SIMComModemClass::begin() {
+  if (!_powered_on) {
+    // Double check to see if our modem isn't on
+    writeCommand("AT");
+    _powered_on == !!checkResponse(NULL, NULL, 500);
+  }
+  if (!_powered_on)
+    hwStart();
+
+  SERIAL_PORT_HARDWARE.begin(115200);
+  while(!SERIAL_PORT_HARDWARE);
+
+  for (int i=0; i<30; i++) {
+    writeCommand("AT");
+    if (checkResponse(NULL, NULL, 2000)) {
+      // writeCommand("ATE0"); // disable command echo
+      // writeCommand("AT&V"); // read current configuration
+      // writeCommand("AT+CFUN?");
+      checkResponse(NULL, NULL, 2000);
+      return true;
+    }
+  }
+  return false;
+}
+
+void SIMComModemClass::setSIMPin(char *pin) {
   if (_sim_pin) {
     free(_sim_pin);
     _sim_pin = NULL;
@@ -28,107 +63,96 @@ void SIMComModem::setSIMPin(char *pin) {
   }
 }
 
-bool SIMComModem::setAPN(char *apn) {
+bool SIMComModemClass::setAPN(char *apn) {
   writeCommand("AT+CGSOCKCONT=1,\"IP\",\"%s\"", apn);
   return !!checkResponse();
 }
 
-void SIMComModem::setHardwareResetPin(uint8_t pin) {
-  _reset_pin = pin;
+void SIMComModemClass::setHardwarePowerPin(uint8_t pin) {
+  _hardware_power_pin = pin;
 }
 
-bool SIMComModem::start() {
-  Serial1.begin(115200);
-  while(!Serial1);
+void SIMComModemClass::hwStart() {
+  // No need to attempt a power toggle when we "know" we have been powered on
+  if (_powered_on)
+    return;
 
-  // theGSM3ShieldV1ModemCore.setStatus(IDLE);
-  pinMode(_reset_pin, OUTPUT);
-  digitalWrite(_reset_pin, HIGH);
-  delay(3000);
-  digitalWrite(_reset_pin, LOW);
-  //delay(1000);
-
-  for (int i=0; i<30; i++) {
-    writeCommand("AT");
-    if (checkResponse(NULL, NULL, 2000))
-      return true;
-  }
-  return false;
+  modem_power_toggle(_hardware_power_pin);
+  _powered_on = true;
 }
 
-bool SIMComModem::restart() {
-  // theGSM3ShieldV1ModemCore.setStatus(IDLE);
-  pinMode(_reset_pin, OUTPUT);
-  digitalWrite(_reset_pin, HIGH);
-  delay(12000);
-  digitalWrite(_reset_pin, LOW);
-  delay(1000);
-  return true;
+void SIMComModemClass::hwShutdown() {
+  if (!_powered_on)
+    return;
+
+  modem_power_toggle(_hardware_power_pin);
+  _powered_on = false;
 }
 
-bool SIMComModem::shutdown() {
-  pinMode(_reset_pin, OUTPUT);
-  digitalWrite(_reset_pin, HIGH);
-  delay(1500);
-  digitalWrite(_reset_pin, LOW);
-}
-
-
-static bool gWriteIsNewline=true;
-size_t SIMComModem::writeBytes(const uint8_t *bytes, size_t size) {
+size_t SIMComModemClass::writeBytes(const uint8_t *bytes, size_t size) {
 #ifdef DEBUG
+  // could this be shortened/cleaned up?
+  static bool gWriteIsNewline=true;
   if (gWriteIsNewline)
-    Serial.print("$ ");
-  Serial.write(bytes, size);
+    DLog("\n$ ");
+  int offset = 0;
+  char tmp[83];
+  do {
+    int chunk = size - offset;
+    memset(&tmp, 0, 83);
+    strncpy(tmp, (char *)bytes+offset, chunk > 80 ? 80 : chunk);
+    DLog(tmp);
+    offset+=80;
+  } while (offset < size);
   gWriteIsNewline = (bytes[size-1] == '\n');
 #endif
-  return Serial1.write(bytes, size);
+  return SERIAL_PORT_HARDWARE.write(bytes, size);
 }
 
-void SIMComModem::writeCommand(const char *format, ... ) {
+void SIMComModemClass::writeCommand(const char *format, ... ) {
   char buffer[256];
   va_list args;
   va_start(args, format);
   vsprintf(buffer,format, args);
   va_end(args);
 
-#ifdef DEBUG
-  Serial.print("$ ");
-  Serial.println(buffer);
-#endif
-
+  DLog("$ %s\n", buffer);
   // Clean the input buffer
-  while(Serial1.available() > 0) Serial1.read();
-  Serial1.println(buffer);
+  while(SERIAL_PORT_HARDWARE.available() > 0) SERIAL_PORT_HARDWARE.read();
+  SERIAL_PORT_HARDWARE.println(buffer);
 }
 
-bool SIMComModem::readLine(char *buffer, uint8_t size, unsigned int timeout) {
+bool SIMComModemClass::readLine(char *buffer, uint8_t size, unsigned int timeout) {
   uint8_t i=0;
   memset(buffer, 0, size);
   unsigned long previous = millis();
   do {
-    if (Serial1.available() != 0) {
-      char ch = Serial1.read();
+    if (SERIAL_PORT_HARDWARE.available() != 0) {
+      char ch = SERIAL_PORT_HARDWARE.read();
       if (ch == 10 || ch == 13) {
-        ch = Serial1.peek();
+        // check for an extra line-break/carriage-return and munch it
+        ch = SERIAL_PORT_HARDWARE.peek();
         if (ch == 10 || ch == 13)
-          Serial1.read();
+          SERIAL_PORT_HARDWARE.read();
+        // an empty line is not returned
         if (i == 0)
           continue;
-        Serial.print("> ");
-        Serial.println(buffer);
+
+        DLog("> %s\n", buffer);
         return true;
       }
+      // filter out non-ascii characters
       if (ch >= 32 && ch <= 126)
         buffer[i++] = ch;
       if (i == size)
         break;
     }
   } while((millis() - previous) < timeout);
+  DLog(" * timeout\n");
   return false;
 }
 
-int SIMComModem::checkResponse(char *string, char *string2, uint16_t timeout) {
+int SIMComModemClass::checkResponse(char *string, char *string2, uint16_t timeout) {
   bool result;
 
   if((string==0) && (string2==0))

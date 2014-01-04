@@ -1,34 +1,69 @@
-/*
-  Copyright (c) 2014 Josh Hollenbeck
-
-  Permission is hereby granted, free of charge, to any person obtaining a copy
-  of this software and associated documentation files (the "Software"), to deal
-  in the Software without restriction, including without limitation the rights
-  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-  copies of the Software, and to permit persons to whom the Software is
-  furnished to do so, subject to the following conditions:
-
-  The above copyright notice and this permission notice shall be included in
-  all copies or substantial portions of the Software.
-
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-  THE SOFTWARE.
-*/
-
 #ifndef _SIMCOM_MODEM__H_
 #define _SIMCOM_MODEM__H_
 
-#include <Arduino.h>
-#define DEBUG
+// Core library for code-sense
+#if defined(MAPLE_IDE) // Maple specific
+#include "WProgram.h"
+#define ARDUINO_PLATFORM
+#elif defined(MPIDE) // chipKIT specific
+#include "WProgram.h"
+#define ARDUINO_PLATFORM
+#elif defined(DIGISPARK) // Digispark specific
+#include "Arduino.h"
+#define ARDUINO_PLATFORM
+#elif defined(ENERGIA) // LaunchPad MSP430, Stellaris and Tiva, Experimeter Board FR5739 specific
+#include "Energia.h"
+#elif defined(CORE_TEENSY) // Teensy specific
+#include "WProgram.h"
+#define ARDUINO_PLATFORM
+#elif defined(ARDUINO) && (ARDUINO >= 100) // Arduino 1.0 and 1.5 specific
+#include "Arduino.h"
+#define ARDUINO_PLATFORM
+#elif defined(ARDUINO) && (ARDUINO < 100) // Arduino 23 specific
+#include "WProgram.h"
+#define ARDUINO_PLATFORM
+#else // error
+#error Platform not defined
+#endif
 
-class SIMComModem {
+
+#ifdef DEBUG
+  #ifdef ARDUINO_PLATFORM
+    static void _printf(const char *format, ...) {
+      char buf[80];
+      va_list ap;
+      va_start(ap, format);
+      vsnprintf(buf, sizeof(buf), format, ap);
+      for(char *p = &buf[0]; *p; p++) {
+        if(*p == '\n')
+          SERIAL_PORT_MONITOR.write('\r');
+        SERIAL_PORT_MONITOR.write(*p);
+      }
+      va_end(ap);
+    }
+    #define __printf(...) _printf(__VA_ARGS__)
+  #else
+    #define __printf(...) printf(__VA_ARGS__)
+  #endif
+
+  #define DLog(format, ...) __printf((format), ##__VA_ARGS__)
+#else
+  #define DLog(format, ...)
+#endif
+
+
+class SIMComModemClass {
 public:
-  SIMComModem();
+  SIMComModemClass();
+
+  // This will start the modem if it has not been already and will also initialize the modem
+  bool begin();
+
+  // Send a hardware start signal if the modem is not already known to be on.
+  void hwStart();
+
+  // Send a hardware shutdown signal if the modem is not already known to be off.
+  void hwShutdown();
 
   // Set the pin used to unlock the SIM.
   // By default there is no pin set and can always be cleared by setting to NULL.
@@ -37,24 +72,9 @@ public:
   // By default there is no APN set and the device default is used.
   bool setAPN(char *apn);
 
-  // Set the pin used to reset the modem
+  // Set the pin used to signal the modem on/off
   // Generally this is never needed unless the shield is not directly plugged in and a different pin is used.
-  void setHardwareResetPin(uint8_t pin);
-
-  // Start the modem
-  // If the modem is already on, this has no effect. Otherwise this will power on the modem.
-  // @returns true if successful
-  bool start();
-
-  // Restart the modem
-  // This will perform a shutdown if running followed by a start
-  // @returns true if successful
-  bool restart();
-
-  // Shutdown the modem
-  // This will essentially power off the device
-  // @returns true if successful
-  bool shutdown();
+  void setHardwarePowerPin(uint8_t pin);
 
   void writeCommand(const char *format, ... );
   size_t writeBytes(const uint8_t *bytes, size_t size);
@@ -62,9 +82,12 @@ public:
   int checkResponse(char *string=NULL, char *string2=NULL, uint16_t timeout=1000);
 
 private:
+  bool    _powered_on;
   char    *_sim_pin;
-  uint8_t _reset_pin;
+  uint8_t _hardware_power_pin;
 };
+
+extern SIMComModemClass SIMComModem;
 
 #include <SIMComModemClient.h>
 

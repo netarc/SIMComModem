@@ -19,12 +19,10 @@ How to Install the library
 Using the SIMComModem library
 =========================
 
-You will need to include the libaries main header and create a global instance of the modem interface class using the following code:
+You will need to include the libaries main header to gives access to the SIMComModem object using the following code:
 
 ```
 #include "SIMComModem.h"
-
-SIMComModem modem;
 ```
 
 Then simply start the modem and point it to the correct APN which is typically done in the microcontroller startup phase using the following code:
@@ -32,11 +30,11 @@ Then simply start the modem and point it to the correct APN which is typically d
 ```
 void setup() {
   ...
-  if (!modem.start()) {
+  if (!SIMComModem.begin()) {
     Serial.println("Failed to start SIMCom Modem");
     while(true);
   }
-  modem.setAPN("YOUR.APN.HERE");
+  SIMComModem.setAPN("YOUR.APN.HERE");
   ...
 }
 ```

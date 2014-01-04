@@ -1,9 +1,9 @@
+#include "SIMComModem.h"
 #include "SIMComModemClient.h"
 
 
-SIMComModemClient::SIMComModemClient(SIMComModem *modem) : _modem(modem),
-                                                           _transmitMode(false),
-                                                           _connected(false) {
+SIMComModemClient::SIMComModemClient() : _transmitMode(false),
+                                         _connected(false) {
 
 }
 
@@ -15,8 +15,8 @@ int SIMComModemClient::connect(IPAddress ip, uint16_t port) {
 
 int SIMComModemClient::connect(const char *address, uint16_t port) {
   _transmitMode = true;
-  _modem->writeCommand("AT+CHTTPACT=\"%s\",%d", address, port);
-  int resp = _modem->checkResponse("+CHTTPACT: REQUEST", "+CME ERROR", 15000);
+  SIMComModem.writeCommand("AT+CHTTPACT=\"%s\",%d", address, port);
+  int resp = SIMComModem.checkResponse("+CHTTPACT: REQUEST", "+CME ERROR", 15000);
   return resp == 1 ? 1 : 0;
 }
 
@@ -24,13 +24,13 @@ void SIMComModemClient::endTransmit() {
   if (_transmitMode) {
     _transmitMode = false;
 
-    _modem->writeCommand("\x1A\x00");
-    if (_modem->checkResponse("OK", NULL, 15000)) {
+    SIMComModem.writeCommand("\x1A\x00");
+    if (SIMComModem.checkResponse("OK", NULL, 15000)) {
       _connected = true;
       return;
       char response[100];
       do {
-        bool result = _modem->readLine(response, 100, 1000);
+        bool result = SIMComModem.readLine(response, 100, 1000);
         if (result) {
           if (strstr(response, "+CHTTPACT") != NULL) {
             char *tkn = strtok(response, " ,");
@@ -73,11 +73,11 @@ void SIMComModemClient::endTransmit() {
 }
 
 size_t SIMComModemClient::write(uint8_t ch) {
-  return _modem->writeBytes(&ch, 1);
+  return SIMComModem.writeBytes(&ch, 1);
 }
 
 size_t SIMComModemClient::write(const uint8_t *bytes, size_t size) {
-  return _modem->writeBytes(bytes, size);
+  return SIMComModem.writeBytes(bytes, size);
 }
 
 int SIMComModemClient::available() {
@@ -109,7 +109,7 @@ void SIMComModemClient::stop() {
   _connected = false;
   if (_transmitMode) {
     _transmitMode = false;
-    _modem->writeCommand("\x1A\x00");
+    SIMComModem.writeCommand("\x1A\x00");
   }
 }
 
