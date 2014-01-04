@@ -19,7 +19,7 @@ SIMComModemClass::SIMComModemClass() : _hardware_power_pin(DEFAULT_HARDWARE_RESE
 
 }
 
-bool SIMComModemClass::begin() {
+bool SIMComModemClass::begin(uint32_t baud) {
   if (!_powered_on) {
     // Double check to see if our modem isn't on
     writeCommand("AT");
@@ -28,7 +28,7 @@ bool SIMComModemClass::begin() {
   if (!_powered_on)
     hwStart();
 
-  SERIAL_PORT_HARDWARE.begin(115200);
+  SERIAL_PORT_HARDWARE.begin(baud);
   while(!SERIAL_PORT_HARDWARE);
 
   for (int i=0; i<30; i++) {

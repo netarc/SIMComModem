@@ -57,7 +57,7 @@ public:
   SIMComModemClass();
 
   // This will start the modem if it has not been already and will also initialize the modem
-  bool begin();
+  bool begin(uint32_t baud=115200);
 
   // Send a hardware start signal if the modem is not already known to be on.
   void hwStart();
